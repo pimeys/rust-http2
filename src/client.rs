@@ -90,6 +90,31 @@ impl Client {
         Client::new_expl(&socket_addr, tls_enabled, conf)
     }
 
+    pub fn new_with_cert<C, R>(host: &str, port: u16, mut cert: R, mut private_key: R, conf: ClientConf) -> Result<Client>
+        where C : TlsConnector, R : io::Read {
+
+        let socket_addr = (host, port).to_socket_addrs()?.next().expect("resolve host/port");
+
+        let tls_enabled = {
+            let mut tls_connector = C::builder()?;
+
+            if C::supports_alpn() {
+                // TODO: check negotiated protocol after connect
+                tls_connector.set_alpn_protocols(&[b"h2"])?;
+            }
+
+            tls_connector.set_certificate(&mut cert)?;
+            tls_connector.set_private_key(&mut private_key)?;
+
+            let tls_connector = tls_connector.build()?;
+
+            let tls_connector = Arc::new(tls_connector);
+            ClientTlsOption::Tls(host.to_owned(), tls_connector)
+        };
+
+        Client::new_expl(&socket_addr, tls_enabled, conf)
+    }
+
     pub fn new_expl<C : TlsConnector>(addr: &SocketAddr, tls: ClientTlsOption<C>, conf: ClientConf) -> Result<Client> {
         // We need some data back from event loop.
         // This channel is used to exchange that data
